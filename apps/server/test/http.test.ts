@@ -122,6 +122,24 @@ describe("workspaces and channels", () => {
     expect(first.body.channel.id).toBe(second.body.channel.id);
     expect(first.body.channel.kind).toBe("dm");
   });
+
+  it("lists workspace members, and names the other person in a DM", async () => {
+    const a = await signup(node.url, "a");
+    const b = await signup(node.url, "b");
+    const { workspaceId } = await workspaceWith(node.url, a, b);
+    await api(node.url, `/workspaces/${workspaceId}/dms`, { token: a.token, body: { username: b.username } });
+
+    const members = await api(node.url, `/workspaces/${workspaceId}/members`, { token: b.token });
+    expect(members.body.members.map((m: { id: string; role: string }) => [m.id, m.role]).sort()).toEqual(
+      [
+        [a.id, "owner"],
+        [b.id, "member"],
+      ].sort(),
+    );
+    const channels = await api(node.url, `/workspaces/${workspaceId}/channels`, { token: b.token });
+    const dm = channels.body.channels.find((c: { kind: string }) => c.kind === "dm");
+    expect(dm).toMatchObject({ dmUserId: a.id, name: null });
+  });
 });
 
 describe("history", () => {

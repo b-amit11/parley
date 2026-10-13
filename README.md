@@ -5,6 +5,13 @@ behind a load balancer, without losing, duplicating or reordering messages.
 
 **[Design doc →](DESIGN.md)** covers requirements, architecture, trade-offs and failure modes.
 
+| Live chat with read receipts | Server killed mid-conversation |
+|---|---|
+| ![parley chat](docs/chat.jpg) | ![offline with a pending message](docs/offline.jpg) |
+
+On the right, the server has been killed. The message stays "Sending…", the client reconnects with
+backoff once the server is back, and the message is stored **exactly once** (seq 7, no gap).
+
 ## What makes it interesting
 
 - **One order per channel, everywhere.** Postgres hands out a sequence number per channel inside the
@@ -50,19 +57,37 @@ The integration tests start **two server instances** against real Postgres and R
 - send limits hold across all of a user's connections on both servers, and failed logins are
   limited.
 
+## The web client
+
+`apps/web` is a React app, but the delivery logic lives in a separate engine
+([`ChatClient`](apps/web/src/lib/client.ts)) that the UI reads through `useSyncExternalStore`:
+- a message shows as pending immediately, and is resent with the same `clientMsgId` after any
+  reconnect until acked; rate-limited sends retry after `retryAfterMs`;
+- messages are deduplicated and ordered by seq; a message arriving ahead of a gap waits while a
+  `sync` fills the gap ([`timeline.ts`](apps/web/src/lib/timeline.ts), pure functions);
+- reconnects use exponential backoff with jitter, then resubscribe, sync each open channel from its
+  head, and resend everything pending;
+- live unread badges, typing indicators, online dots and "Seen by".
+
+The engine is tested **with the same code the browser runs**, against two real servers in
+Node: pending → confirmed, sends while offline delivered exactly once, catch-up after a drop, and
+unread, read, typing and online state.
+
 ## Run it
 
 ```bash
 npm install
 npm run db:up        # Postgres and Redis in Docker
-npm test             # 29 integration tests
+npm test             # 40 tests (server + client engine)
+npm run seed         # demo users alice / bob / carol, password "parley-demo"
 npm run dev          # server on :3000 (runs migrations on start)
+npm run dev:web      # web app on http://localhost:5173
 ```
 
-Stack: TypeScript, Node 24, Fastify, ws, Postgres 17, Redis 7, zod, Vitest, Biome.
+Stack: TypeScript, Node 24, Fastify, ws, Postgres 17, Redis 7, zod, React 19, Vite, Vitest, Biome.
 
 ## Roadmap
 1. ✅ Server core: auth, workspaces/channels/DMs, ordered and duplicate-safe sends, fan-out across servers, sync
 2. ✅ Online status, typing indicators, read receipts and unread counts, rate limiting
-3. React web client with sends shown before they're confirmed and automatic reconnect plus sync
+3. ✅ React web client: pending sends, automatic reconnect plus sync, unread badges, typing, online status, "Seen by"
 4. Docker Compose with 3 servers behind nginx, a load test (p50/p99 latency, msgs/s), metrics, deployment

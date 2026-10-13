@@ -121,6 +121,12 @@ export function registerRoutes(app: FastifyInstance, { db, redis, limiter, login
     return reply.status(added ? 201 : 200).send({ added });
   });
 
+  app.get("/workspaces/:id/members", { preHandler: authed }, async (req) => {
+    const id = parse(Id, (req.params as { id: string }).id);
+    if (!(await store.workspaceRole(db, id, req.user.id))) throw new HttpError(404, "No such workspace");
+    return { members: await store.workspaceMembers(db, id) };
+  });
+
   app.get("/workspaces/:id/channels", { preHandler: authed }, async (req) => {
     const id = parse(Id, (req.params as { id: string }).id);
     if (!(await store.workspaceRole(db, id, req.user.id))) throw new HttpError(404, "No such workspace");

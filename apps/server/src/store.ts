@@ -13,7 +13,13 @@ export type Channel = {
   lastSeq: number;
 };
 /** `unread` is just last_seq minus the read cursor, so no messages need counting (DESIGN.md §6). */
-export type ChannelSummary = Channel & { joined: boolean; lastReadSeq: number; unread: number };
+export type ChannelSummary = Channel & {
+  joined: boolean;
+  lastReadSeq: number;
+  unread: number;
+  /** For DMs: the other person (null for a DM with yourself). */
+  dmUserId: string | null;
+};
 
 const SESSION_TTL_DAYS = 30;
 
@@ -173,7 +179,10 @@ export async function listChannels(db: Db, workspaceId: string, userId: string):
     `SELECT ${CHANNEL_COLUMNS}, (cm.user_id IS NOT NULL) AS joined,
             COALESCE(rc.last_read_seq, 0) AS "lastReadSeq",
             CASE WHEN cm.user_id IS NULL THEN 0
-                 ELSE c.last_seq - COALESCE(rc.last_read_seq, 0) END AS unread
+                 ELSE c.last_seq - COALESCE(rc.last_read_seq, 0) END AS unread,
+            CASE WHEN c.kind = 'dm' THEN (
+              SELECT o.user_id FROM channel_members o
+              WHERE o.channel_id = c.id AND o.user_id <> $2 LIMIT 1) END AS "dmUserId"
      FROM channels c
      JOIN workspace_members wm ON wm.workspace_id = c.workspace_id AND wm.user_id = $2
      LEFT JOIN channel_members cm ON cm.channel_id = c.id AND cm.user_id = $2
@@ -266,6 +275,17 @@ export async function workspaceIdsOf(db: Db, userId: string): Promise<string[]> 
     [userId],
   );
   return r.rows.map((row) => row.workspace_id);
+}
+
+export type Member = { id: string; username: string; role: "owner" | "member" };
+
+export async function workspaceMembers(db: Db, workspaceId: string): Promise<Member[]> {
+  const r = await db.query<Member>(
+    `SELECT u.id, u.username, m.role FROM workspace_members m JOIN users u ON u.id = m.user_id
+     WHERE m.workspace_id = $1 ORDER BY u.username`,
+    [workspaceId],
+  );
+  return r.rows;
 }
 
 export async function workspaceMemberIds(db: Db, workspaceId: string): Promise<string[]> {
