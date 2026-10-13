@@ -9,11 +9,13 @@
   "scripts": {
     "dev": "npm run dev -w @parley/server",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p apps/web/tsconfig.json --noEmit",
     "lint": "biome check .",
     "format": "biome format --write .",
     "db:up": "docker compose up -d postgres redis",
-    "db:down": "docker compose down"
+    "db:down": "docker compose down",
+    "dev:web": "npm run dev -w @parley/web",
+    "seed": "npm run seed -w @parley/server"
   },
   "dependencies": {
     "zod": "^4.6.7"

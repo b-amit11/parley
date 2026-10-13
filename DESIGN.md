@@ -172,7 +172,8 @@ read_cursors(user_id, channel_id, last_read_seq)
    sends, Redis fan-out, sync, multi-server integration tests.
 2. ✅ **Live features:** online status (crash-safe sweep), typing indicators, read receipts and
    unread counts, rate limiting.
-3. React web client (channel list, message list with unsent/pending messages shown, reconnecting,
-   online indicators).
+3. ✅ **React web client:** a framework-independent `ChatClient` engine (pending messages,
+   reconnect with backoff and jitter, gap-driven sync, deduplication by seq) tested against two
+   real servers, plus the React UI.
 4. Docker Compose with 3 servers behind nginx, the load test, metrics (Prometheus) and a
    deployment.
