@@ -37,6 +37,12 @@ export const ClientFrame = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("subscribe"), channelIds: z.array(id).min(1).max(500) }),
   z.object({ type: z.literal("unsubscribe"), channelIds: z.array(id).min(1).max(500) }),
+  /** "I'm typing in this channel." Throttled by the server; requires being subscribed. */
+  z.object({ type: z.literal("typing"), channelId: id }),
+  /** Move this user's read cursor forward. Never moves it back. */
+  z.object({ type: z.literal("read"), channelId: id, seq }),
+  /** Get who is online in a workspace now, then live updates. */
+  z.object({ type: z.literal("watch_presence"), workspaceId: id }),
   z.object({ type: z.literal("ping") }),
 ]);
 export type ClientFrame = z.infer<typeof ClientFrame>;
@@ -71,10 +77,18 @@ export const ServerFrame = z.discriminatedUnion("type", [
     message: z.string(),
     /** The clientMsgId or channelId the error relates to, when there is one. */
     ref: z.string().optional(),
+    retryAfterMs: z.number().int().nonnegative().optional(),
   }),
+  z.object({ type: z.literal("typing"), channelId: id, userId: id }),
+  z.object({ type: z.literal("read"), channelId: id, userId: id, seq }),
+  z.object({ type: z.literal("presence"), workspaceId: id, userId: id, online: z.boolean() }),
+  z.object({ type: z.literal("presence_snapshot"), workspaceId: id, online: z.array(id) }),
   z.object({ type: z.literal("pong") }),
 ]);
 export type ServerFrame = z.infer<typeof ServerFrame>;
+
+/** The frames that travel between servers over Redis and are forwarded to subscribed sockets. */
+export type BusFrame = Extract<ServerFrame, { type: "message" | "typing" | "read" | "presence" }>;
 
 /** WebSocket close codes in the 4000s, which applications are free to define. */
 export const CloseCode = {

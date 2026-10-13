@@ -1,8 +1,9 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { Redis } from "ioredis";
 import { z } from "zod";
 import { hashPassword, verifyPassword } from "./auth.ts";
 import type { Db } from "./db.ts";
-import type { Fanout } from "./fanout.ts";
+import type { Bucket, RateLimiter } from "./ratelimit.ts";
 import * as store from "./store.ts";
 
 const Username = z.string().regex(/^[a-z0-9_]{3,32}$/, "3-32 lowercase letters, digits or _");
@@ -36,7 +37,9 @@ function bearer(req: FastifyRequest): string | null {
   return h?.startsWith("Bearer ") ? h.slice(7) : null;
 }
 
-export function registerRoutes(app: FastifyInstance, db: Db, fanout: Fanout): void {
+export type RouteDeps = { db: Db; redis: Redis; limiter: RateLimiter; loginLimit: Bucket };
+
+export function registerRoutes(app: FastifyInstance, { db, redis, limiter, loginLimit }: RouteDeps): void {
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof HttpError) return reply.status(err.status).send({ error: err.message });
     const { statusCode: status, message } = err as { statusCode?: number; message?: string };
@@ -53,12 +56,12 @@ export function registerRoutes(app: FastifyInstance, db: Db, fanout: Fanout): vo
   };
 
   app.get("/healthz", async (_req, reply) => {
-    const [pg, redis] = await Promise.allSettled([db.query("SELECT 1"), fanout.ping()]);
-    const ok = pg.status === "fulfilled" && redis.status === "fulfilled" && redis.value;
-    return reply.status(ok ? 200 : 503).send({
+    const [pg, ping] = await Promise.allSettled([db.query("SELECT 1"), redis.ping()]);
+    const status = {
       postgres: pg.status === "fulfilled",
-      redis: redis.status === "fulfilled" && redis.value,
-    });
+      redis: ping.status === "fulfilled" && ping.value === "PONG",
+    };
+    return reply.status(status.postgres && status.redis ? 200 : 503).send(status);
   });
 
   // ── auth ───────────────────────────────────────────────────────────────────
@@ -70,8 +73,14 @@ export function registerRoutes(app: FastifyInstance, db: Db, fanout: Fanout): vo
     return reply.status(201).send({ user, token: await store.createSession(db, user.id) });
   });
 
-  app.post("/auth/login", async (req) => {
+  app.post("/auth/login", async (req, reply) => {
     const { username, password } = parse(Credentials, req.body);
+    // Limited per username, so guessing one account's password is slow wherever it comes from.
+    const limit = await limiter.take(`login:${username}`, loginLimit);
+    if (!limit.allowed) {
+      reply.header("retry-after", Math.ceil(limit.retryAfterMs / 1000));
+      throw new HttpError(429, "Too many login attempts; try again later");
+    }
     const found = await store.findUserByUsername(db, username);
     // Verify against a fixed hash when the user doesn't exist, so response timing doesn't reveal valid usernames.
     const ok = await verifyPassword(password, found?.passwordHash ?? DUMMY_HASH);
@@ -158,6 +167,12 @@ export function registerRoutes(app: FastifyInstance, db: Db, fanout: Fanout): vo
       throw new HttpError(404, "No such channel or workspace member");
     }
     return { added: true };
+  });
+
+  app.get("/channels/:id/reads", { preHandler: authed }, async (req) => {
+    const id = parse(Id, (req.params as { id: string }).id);
+    if (!(await store.isMember(db, id, req.user.id))) throw new HttpError(404, "No such channel");
+    return { reads: await store.readCursors(db, id) };
   });
 
   app.get("/channels/:id/messages", { preHandler: authed }, async (req) => {

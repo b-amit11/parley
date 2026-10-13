@@ -15,7 +15,9 @@ async function connect(node: RunningServer, token: string) {
 }
 
 beforeAll(async () => {
-  [node1, node2] = await Promise.all([startNode("node-1"), startNode("node-2")]);
+  // These tests are about ordering and delivery, so the send limit is raised out of the way.
+  const limits = { sendLimit: { capacity: 10_000, refillPerSec: 10_000 } };
+  [node1, node2] = await Promise.all([startNode("node-1", limits), startNode("node-2", limits)]);
 });
 
 afterAll(async () => {
@@ -208,15 +210,15 @@ describe("fan-out bookkeeping", () => {
   it("unsubscribes the server from Redis when its last local listener leaves", async () => {
     const alice = await signup(node1.url, "alice");
     const { generalId } = await workspaceWith(node1.url, alice);
-    const before = node2.fanout.channelCount;
+    const before = node2.fanout.topicCount;
     const tab1 = await connect(node2, alice.token);
     const tab2 = await connect(node2, alice.token);
     await Promise.all([tab1.subscribe(generalId), tab2.subscribe(generalId)]);
-    expect(node2.fanout.channelCount).toBe(before + 1);
+    expect(node2.fanout.topicCount).toBe(before + 1);
 
     await tab1.close();
-    expect(node2.fanout.channelCount).toBe(before + 1);
+    expect(node2.fanout.topicCount).toBe(before + 1);
     await tab2.close();
-    await eventually(() => node2.fanout.channelCount === before);
+    await eventually(() => node2.fanout.topicCount === before);
   });
 });

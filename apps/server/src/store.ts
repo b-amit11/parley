@@ -12,7 +12,8 @@ export type Channel = {
   name: string | null;
   lastSeq: number;
 };
-export type ChannelSummary = Channel & { joined: boolean; lastReadSeq: number };
+/** `unread` is just last_seq minus the read cursor, so no messages need counting (DESIGN.md §6). */
+export type ChannelSummary = Channel & { joined: boolean; lastReadSeq: number; unread: number };
 
 const SESSION_TTL_DAYS = 30;
 
@@ -170,7 +171,9 @@ export async function createChannel(
 export async function listChannels(db: Db, workspaceId: string, userId: string): Promise<ChannelSummary[]> {
   const r = await db.query<ChannelSummary>(
     `SELECT ${CHANNEL_COLUMNS}, (cm.user_id IS NOT NULL) AS joined,
-            COALESCE(rc.last_read_seq, 0) AS "lastReadSeq"
+            COALESCE(rc.last_read_seq, 0) AS "lastReadSeq",
+            CASE WHEN cm.user_id IS NULL THEN 0
+                 ELSE c.last_seq - COALESCE(rc.last_read_seq, 0) END AS unread
      FROM channels c
      JOIN workspace_members wm ON wm.workspace_id = c.workspace_id AND wm.user_id = $2
      LEFT JOIN channel_members cm ON cm.channel_id = c.id AND cm.user_id = $2
@@ -257,6 +260,22 @@ export async function getOrCreateDm(
   });
 }
 
+export async function workspaceIdsOf(db: Db, userId: string): Promise<string[]> {
+  const r = await db.query<{ workspace_id: string }>(
+    "SELECT workspace_id FROM workspace_members WHERE user_id = $1",
+    [userId],
+  );
+  return r.rows.map((row) => row.workspace_id);
+}
+
+export async function workspaceMemberIds(db: Db, workspaceId: string): Promise<string[]> {
+  const r = await db.query<{ user_id: string }>(
+    "SELECT user_id FROM workspace_members WHERE workspace_id = $1",
+    [workspaceId],
+  );
+  return r.rows.map((row) => row.user_id);
+}
+
 export async function isMember(db: Db, channelId: string, userId: string): Promise<boolean> {
   const r = await db.query("SELECT 1 FROM channel_members WHERE channel_id = $1 AND user_id = $2", [
     channelId,
@@ -317,6 +336,13 @@ export async function sendMessage(db: Db, input: SendInput): Promise<SendResult>
         [input.channelId, next, input.senderId, input.clientMsgId, input.body],
       );
       if (!inserted.rows[0]) throw new DuplicateSend();
+      // You've read your own message: move the sender's read cursor forward too.
+      await tx.query(
+        `INSERT INTO read_cursors (user_id, channel_id, last_read_seq) VALUES ($1, $2, $3)
+         ON CONFLICT (user_id, channel_id) DO UPDATE
+         SET last_read_seq = GREATEST(read_cursors.last_read_seq, EXCLUDED.last_read_seq)`,
+        [input.senderId, input.channelId, next],
+      );
       return { message: inserted.rows[0], duplicate: false };
     });
   } catch (err) {
@@ -367,4 +393,44 @@ export async function messagesBefore(
     [channelId, beforeSeq, limit + 1],
   );
   return { messages: r.rows.slice(0, limit).reverse(), hasMore: r.rows.length > limit };
+}
+
+// ── read cursors ──────────────────────────────────────────────────────────────
+
+/**
+ * Moves a member's read cursor forward, capped at the channel's latest seq. Returns the new value,
+ * or null if nothing changed (not a member, or the cursor was already at or past `seq`).
+ */
+export async function markRead(
+  db: Db,
+  channelId: string,
+  userId: string,
+  seq: number,
+): Promise<number | null> {
+  const r = await db.query<{ last_read_seq: number }>(
+    `INSERT INTO read_cursors (user_id, channel_id, last_read_seq)
+     SELECT $2, c.id, LEAST($3::bigint, c.last_seq) FROM channels c
+     JOIN channel_members m ON m.channel_id = c.id AND m.user_id = $2
+     WHERE c.id = $1
+     ON CONFLICT (user_id, channel_id) DO UPDATE SET last_read_seq = EXCLUDED.last_read_seq
+       WHERE read_cursors.last_read_seq < EXCLUDED.last_read_seq
+     RETURNING last_read_seq`,
+    [channelId, userId, seq],
+  );
+  return r.rows[0]?.last_read_seq ?? null;
+}
+
+/** How far each member has read, for "seen by" receipts. */
+export async function readCursors(
+  db: Db,
+  channelId: string,
+): Promise<{ userId: string; lastReadSeq: number }[]> {
+  const r = await db.query<{ userId: string; lastReadSeq: number }>(
+    `SELECT m.user_id AS "userId", COALESCE(rc.last_read_seq, 0) AS "lastReadSeq"
+     FROM channel_members m
+     LEFT JOIN read_cursors rc ON rc.channel_id = m.channel_id AND rc.user_id = m.user_id
+     WHERE m.channel_id = $1 ORDER BY m.joined_at`,
+    [channelId],
+  );
+  return r.rows;
 }

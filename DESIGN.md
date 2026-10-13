@@ -78,23 +78,47 @@ about that channel (counted per channel), and unsubscribes when the count drops 
 traffic between servers grows with the channels actually in use, not with every channel.
 
 ### 4. Presence
-- Each socket sends a heartbeat every 20 s. The server stores
-  `presence:<userId>` as a Redis set of connection ids, each with an expiry 60 s ahead.
-- A user is online if they have at least one connection that hasn't expired, which handles
-  multiple tabs and devices. When a server crashes, its entries simply expire, so no cleanup job
-  is needed.
-- Changes from offline to online and back are published to the workspace channel.
+Two Redis sorted sets, both scored by expiry time and only changed through Lua scripts (atomic,
+using Redis's own clock so servers whose clocks drift still agree):
+- `presence:conns:<userId>`: that user's connection ids. Several tabs or devices count as one
+  online user.
+- `presence:online`: user ids, scored by their latest connection expiry.
+
+| Event | What happens | Announced by |
+|---|---|---|
+| Socket opens | `touch` adds the connection; returns "just came online" if the user wasn't live | the server that took the connection |
+| Every 20 s | each server touches *its own* connections in one pipeline | (no change, so no event) |
+| Socket closes | `drop` removes it; returns "went offline" only if it was the last live connection | that server |
+| A server crashes | its connections stop being refreshed and expire after 60 s | **the sweep** |
+
+The sweep runs on every server every 10 s. One script atomically removes users whose connections
+have all expired and returns them, so exactly one server sees each user and announces them
+offline. There's no leader election and no duplicate events.
+
+Online/offline changes are published to `wsp:<workspaceId>` for every workspace the user is in.
+`watch_presence` subscribes *first* and then takes the snapshot (`ZSCORE > now` for each member),
+so no change between the two is missed.
 
 ### 5. Typing indicators
-Only ever passed through pub/sub, never stored, throttled to one event every 3 s per user per
-channel. Losing one is harmless.
+Only ever passed through pub/sub, never stored. The server throttles them to one every 2 s per
+connection per channel. That's done in memory: a user with two tabs could send two, which is
+harmless, and it saves a Redis round trip on the busiest event in the system. The sender's own
+servers don't echo the indicator back to them. Clients must be subscribed to the channel, so
+checking membership costs nothing.
 
 ### 6. Read receipts and unread counts
 `read_cursors(user_id, channel_id, last_read_seq)`. Unread count = `channel.last_seq -
 last_read_seq`, which costs nothing because no messages have to be counted.
+- `read` only ever moves forward (an upsert with `WHERE old < new`), capped at `last_seq`. When the
+  cursor actually advances, a `read` event is published for "seen by" indicators.
+- Sending a message moves the sender's own cursor forward in the same transaction.
 
 ### 7. Backpressure and abuse
-- Rate limits use a token bucket in Redis per user (a Lua script, so it's atomic across servers).
+- Rate limits use a token bucket in Redis (a Lua script, so it's atomic across servers):
+  sends per user (20 burst, 5/s), and failed logins per username (10 burst, 1 every 30 s) to
+  slow password guessing whatever IP it comes from.
+  If Redis is down the limiter **fails open**: for chat, staying available during an outage
+  matters more than strict limits.
 - If a socket's send buffer goes over a limit (a slow client), the server closes it with a
   "please resync" code instead of buffering without limit.
 - Maximum message size, and every incoming frame is validated against the shared message schemas.
@@ -144,9 +168,10 @@ read_cursors(user_id, channel_id, last_read_seq)
   second, with results in the README.
 
 ## Milestones
-1. **Server core:** auth, workspaces and channels, WebSocket gateway, ordered and duplicate-safe
-   sends, Redis fan-out, sync, multi-server integration tests. ← *current*
-2. Online status, typing indicators, read receipts and unread counts, rate limiting, backpressure.
+1. ✅ **Server core:** auth, workspaces and channels, WebSocket gateway, ordered and duplicate-safe
+   sends, Redis fan-out, sync, multi-server integration tests.
+2. ✅ **Live features:** online status (crash-safe sweep), typing indicators, read receipts and
+   unread counts, rate limiting.
 3. React web client (channel list, message list with unsent/pending messages shown, reconnecting,
    online indicators).
 4. Docker Compose with 3 servers behind nginx, the load test, metrics (Prometheus) and a

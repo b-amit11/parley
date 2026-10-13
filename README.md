@@ -18,6 +18,9 @@ behind a load balancer, without losing, duplicating or reordering messages.
   Postgres, the source of truth.
 - **Servers keep no session state.** Any client can connect to any server. Each server
   subscribes to a Redis channel only while one of its own sockets needs it.
+- **Online status survives crashes.** Each server refreshes its own connections in Redis; when a
+  server dies they expire, and an atomic sweep run by every server announces each user offline
+  exactly once, with no leader election.
 - **Protected against overload.** Frames from one socket are processed in order with a limit on
   how many can wait, slow clients are disconnected before they can exhaust memory, and every
   frame is validated against shared zod schemas.
@@ -39,14 +42,20 @@ The integration tests start **two server instances** against real Postgres and R
 - catching up after reconnecting to a *different* server;
 - non-members can't subscribe, send, sync or read history;
 - malformed frames get an error without closing the socket; unauthenticated sockets get a 401;
-- servers unsubscribe from Redis when their last local listener leaves.
+- servers unsubscribe from Redis when their last local listener leaves;
+- online status works across servers, several tabs count as one user, and users go offline when
+  their server "crashes";
+- typing indicators are throttled and not echoed back; read receipts only move forward and drive
+  unread counts;
+- send limits hold across all of a user's connections on both servers, and failed logins are
+  limited.
 
 ## Run it
 
 ```bash
 npm install
 npm run db:up        # Postgres and Redis in Docker
-npm test             # 20 integration tests
+npm test             # 29 integration tests
 npm run dev          # server on :3000 (runs migrations on start)
 ```
 
@@ -54,6 +63,6 @@ Stack: TypeScript, Node 24, Fastify, ws, Postgres 17, Redis 7, zod, Vitest, Biom
 
 ## Roadmap
 1. ✅ Server core: auth, workspaces/channels/DMs, ordered and duplicate-safe sends, fan-out across servers, sync
-2. Online status, typing indicators, read receipts and unread counts, rate limiting
+2. ✅ Online status, typing indicators, read receipts and unread counts, rate limiting
 3. React web client with sends shown before they're confirmed and automatic reconnect plus sync
 4. Docker Compose with 3 servers behind nginx, a load test (p50/p99 latency, msgs/s), metrics, deployment
