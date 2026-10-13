@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { type ClientFrame, PROTOCOL, ServerFrame } from "@parley/shared";
 import WebSocket from "ws";
-import { type RunningServer, startServer } from "../src/app.ts";
+import { type Limits, type RunningServer, startServer } from "../src/app.ts";
 import { TEST_DB_URL, TEST_REDIS_URL } from "./env.ts";
 
-export function startNode(nodeId: string): Promise<RunningServer> {
+export function startNode(nodeId: string, limits: Partial<Limits> = {}): Promise<RunningServer> {
   return startServer({
+    limits,
     databaseUrl: TEST_DB_URL,
     redisUrl: TEST_REDIS_URL,
     port: 0,
