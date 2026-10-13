@@ -16,7 +16,12 @@ export function App() {
       .withToken(session.token)
       .me()
       .catch((err) => {
-        if (err instanceof ApiError && err.status === 401) signOut();
+        // Expired or revoked: forget it locally (no logout call needed, the server already did).
+        if (err instanceof ApiError && err.status === 401) {
+          saveSession(null);
+          setSession(null);
+          setWorkspace(null);
+        }
       });
   }, [session]);
 

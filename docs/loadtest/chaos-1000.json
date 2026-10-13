@@ -1,0 +1,46 @@
+{
+  "config": {
+    "url": "http://localhost:8080",
+    "channels": 50,
+    "members": 20,
+    "connections": 1000,
+    "ratePerUser": 0.5,
+    "durationS": 60,
+    "chaos": true
+  },
+  "throughput": {
+    "sent": 30909,
+    "stored": 30909,
+    "sendsPerSecond": 515.1,
+    "deliveriesPerSecond": 9787.4
+  },
+  "ackLatencyMs": {
+    "count": 30909,
+    "p50": 2,
+    "p95": 3864,
+    "p99": 10950,
+    "max": 13067
+  },
+  "deliveryLatencyMs": {
+    "count": 559225,
+    "p50": 2,
+    "p95": 3506,
+    "p99": 10902,
+    "max": 13068
+  },
+  "recoveredBySync": 28046,
+  "reconnects": 344,
+  "chaos": {
+    "killedAt": 30.304,
+    "restartedAt": 41.061
+  },
+  "correctness": {
+    "missing": 0,
+    "duplicates": 0,
+    "outOfOrder": 0,
+    "unacked": 0,
+    "channelsWithSeqGaps": 0
+  },
+  "loadGeneratorEventLoopP99Ms": 11.4,
+  "drainSeconds": 0.2
+}

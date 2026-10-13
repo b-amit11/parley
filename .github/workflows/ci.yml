@@ -21,3 +21,18 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+
+  # Builds the real images, starts 3 servers behind nginx, and runs a small load test that
+  # SIGKILLs one server partway through. Fails if any client is missing a message, has a
+  # duplicate, or has one out of order.
+  chaos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - run: npm run cluster:up
+      - run: npm run loadtest -- --channels 20 --members 10 --rate 0.5 --duration 30 --chaos --out docs/loadtest/ci-chaos.json
+      - if: always()
+        run: docker compose --profile cluster logs --tail 50

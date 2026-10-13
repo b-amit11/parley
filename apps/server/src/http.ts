@@ -3,6 +3,7 @@ import type { Redis } from "ioredis";
 import { z } from "zod";
 import { hashPassword, verifyPassword } from "./auth.ts";
 import type { Db } from "./db.ts";
+import { metrics, registry } from "./metrics.ts";
 import type { Bucket, RateLimiter } from "./ratelimit.ts";
 import * as store from "./store.ts";
 
@@ -64,6 +65,9 @@ export function registerRoutes(app: FastifyInstance, { db, redis, limiter, login
     return reply.status(status.postgres && status.redis ? 200 : 503).send(status);
   });
 
+  // Scraped by Prometheus inside the cluster network; the load balancer doesn't route it.
+  app.get("/metrics", async (_req, reply) => reply.type(registry.contentType).send(await registry.metrics()));
+
   // ── auth ───────────────────────────────────────────────────────────────────
 
   app.post("/auth/signup", async (req, reply) => {
@@ -78,6 +82,7 @@ export function registerRoutes(app: FastifyInstance, { db, redis, limiter, login
     // Limited per username, so guessing one account's password is slow wherever it comes from.
     const limit = await limiter.take(`login:${username}`, loginLimit);
     if (!limit.allowed) {
+      metrics.rateLimited.inc({ action: "login" });
       reply.header("retry-after", Math.ceil(limit.retryAfterMs / 1000));
       throw new HttpError(429, "Too many login attempts; try again later");
     }

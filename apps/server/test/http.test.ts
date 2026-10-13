@@ -161,6 +161,16 @@ describe("history", () => {
   });
 });
 
+describe("metrics", () => {
+  it("exposes Prometheus metrics", async () => {
+    const res = await fetch(`${node.url}/metrics`);
+    const text = await res.text();
+    expect(res.headers.get("content-type")).toContain("text/plain");
+    expect(text).toContain("parley_ws_connections");
+    expect(text).toContain("parley_send_duration_seconds_bucket");
+  });
+});
+
 describe("health", () => {
   it("reports Postgres and Redis status", async () => {
     expect(await api(node.url, "/healthz")).toEqual({ status: 200, body: { postgres: true, redis: true } });
