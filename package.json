@@ -15,7 +15,10 @@
     "db:up": "docker compose up -d postgres redis",
     "db:down": "docker compose down",
     "dev:web": "npm run dev -w @parley/web",
-    "seed": "npm run seed -w @parley/server"
+    "seed": "npm run seed -w @parley/server",
+    "cluster:up": "docker compose --profile cluster up -d --build --wait",
+    "cluster:down": "docker compose --profile cluster down",
+    "loadtest": "npm start -w @parley/loadtest --"
   },
   "dependencies": {
     "zod": "^4.6.7"

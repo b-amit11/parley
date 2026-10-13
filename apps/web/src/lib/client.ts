@@ -49,6 +49,8 @@ export type ClientOptions = {
   backoff?: { minMs: number; maxMs: number };
   /** How often to re-fetch the channel list, to notice channels you were added to. */
   refreshMs?: number;
+  /** Called for every message frame as it arrives (before deduplication), e.g. for notifications or load-test timing. */
+  onMessage?: (message: Message, via: "ack" | "live" | "sync") => void;
 };
 
 const TYPING_SHOWN_MS = 4000;
@@ -199,14 +201,20 @@ export class ChatClient {
     const frame = parsed.data;
     switch (frame.type) {
       case "ready":
-        return this.onReady();
+        this.onReady();
+        return;
       case "ack":
         this.set({ pending: this.state.pending.filter((p) => p.clientMsgId !== frame.clientMsgId) });
-        return this.receive([frame.message]);
+        this.opts.onMessage?.(frame.message, "ack");
+        this.receive([frame.message]);
+        return;
       case "message":
         this.clearTyping(frame.message.channelId, frame.message.senderId);
-        return this.receive([frame.message]);
+        this.opts.onMessage?.(frame.message, "live");
+        this.receive([frame.message]);
+        return;
       case "sync_result": {
+        for (const m of frame.messages) this.opts.onMessage?.(m, "sync");
         this.receive(frame.messages);
         const head = this.state.channels[frame.channelId]?.timeline.head;
         if (frame.hasMore && head !== undefined)
@@ -214,7 +222,7 @@ export class ChatClient {
         return;
       }
       case "typing":
-        return this.set({
+        this.set({
           typing: {
             ...this.state.typing,
             [frame.channelId]: {
@@ -223,6 +231,7 @@ export class ChatClient {
             },
           },
         });
+        return;
       case "read":
         this.set({
           reads: {
@@ -237,15 +246,18 @@ export class ChatClient {
         }
         return;
       case "presence_snapshot":
-        return this.set({ online: new Set(frame.online) });
+        this.set({ online: new Set(frame.online) });
+        return;
       case "presence": {
         const online = new Set(this.state.online);
         if (frame.online) online.add(frame.userId);
         else online.delete(frame.userId);
-        return this.set({ online });
+        this.set({ online });
+        return;
       }
       case "error":
-        return this.onError(frame);
+        this.onError(frame);
+        return;
       default:
         return;
     }

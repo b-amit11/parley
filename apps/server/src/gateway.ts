@@ -21,6 +21,7 @@ import { type RawData, WebSocket, WebSocketServer } from "ws";
 import { z } from "zod";
 import type { Db } from "./db.ts";
 import { channelTopic, type Fanout, type Listener, workspaceTopic } from "./fanout.ts";
+import { metrics } from "./metrics.ts";
 import type { Presence } from "./presence.ts";
 import type { Bucket, RateLimiter } from "./ratelimit.ts";
 import * as store from "./store.ts";
@@ -65,7 +66,11 @@ export function attachGateway(server: Server, deps: GatewayDeps): Gateway {
         wss.handleUpgrade(req, socket, head, (ws) => {
           const conn = new Connection(ws, user, deps, presence);
           live.add(conn);
-          ws.on("close", () => live.delete(conn));
+          metrics.connections.inc();
+          ws.on("close", () => {
+            live.delete(conn);
+            metrics.connections.dec();
+          });
           conn.start();
         });
       },
@@ -90,6 +95,7 @@ export function attachGateway(server: Server, deps: GatewayDeps): Gateway {
   const sweep = setInterval(() => {
     deps.presence.sweep().then(
       (gone) => {
+        metrics.presenceSwept.inc(gone.length);
         for (const userId of gone) presence.announce(userId, false);
       },
       (err) => deps.log.error({ err }, "presence sweep failed"),
@@ -225,8 +231,12 @@ class Connection {
       return this.error("bad_request", "Frame is not valid JSON");
     }
     const parsed = ClientFrame.safeParse(json);
-    if (!parsed.success) return this.error("bad_request", z.prettifyError(parsed.error));
+    if (!parsed.success) {
+      metrics.frames.inc({ type: "invalid" });
+      return this.error("bad_request", z.prettifyError(parsed.error));
+    }
     const frame = parsed.data;
+    metrics.frames.inc({ type: frame.type });
 
     switch (frame.type) {
       case "ping":
@@ -291,8 +301,18 @@ class Connection {
   }
 
   private async sendMessage(frame: Extract<ClientFrame, { type: "send" }>): Promise<void> {
+    const timer = metrics.sendSeconds.startTimer();
+    try {
+      await this.storeAndAck(frame);
+    } finally {
+      timer();
+    }
+  }
+
+  private async storeAndAck(frame: Extract<ClientFrame, { type: "send" }>): Promise<void> {
     const limit = await this.deps.limiter.take(`send:${this.user.id}`, this.deps.options.sendLimit);
     if (!limit.allowed) {
+      metrics.rateLimited.inc({ action: "send" });
       return this.error("rate_limited", "Sending too fast", frame.clientMsgId, limit.retryAfterMs);
     }
     const result = await store.sendMessage(this.deps.db, {
@@ -302,11 +322,13 @@ class Connection {
       body: frame.body,
     });
     if ("error" in result) {
+      metrics.messages.inc({ outcome: "rejected" });
       return result.error === "forbidden"
         ? this.error("forbidden", "Not a member of this channel", frame.clientMsgId)
         : this.error("bad_request", "clientMsgId was already used in another channel", frame.clientMsgId);
     }
     this.send({ type: "ack", clientMsgId: frame.clientMsgId, message: result.message });
+    metrics.messages.inc({ outcome: result.duplicate ? "duplicate" : "new" });
     if (result.duplicate) return; // already fanned out the first time
     try {
       await this.deps.fanout.publish(channelTopic(frame.channelId), {
@@ -315,6 +337,7 @@ class Connection {
       });
     } catch (err) {
       // The message is saved and acknowledged; other clients will pick it up through sync.
+      metrics.publishFailures.inc();
       this.deps.log.error({ err, channel: frame.channelId }, "fan-out publish failed");
     }
   }
@@ -369,6 +392,7 @@ class Connection {
     if (this.ws.readyState !== WebSocket.OPEN) return;
     if (this.ws.bufferedAmount > MAX_BUFFERED_BYTES) {
       // Better to drop a slow client than to buffer without limit; it reconnects and syncs.
+      metrics.slowClients.inc();
       this.ws.close(CloseCode.RESYNC, "client too slow, resync");
       return;
     }

@@ -5,6 +5,19 @@ behind a load balancer, without losing, duplicating or reordering messages.
 
 **[Design doc →](DESIGN.md)** covers requirements, architecture, trade-offs and failure modes.
 
+## Results
+
+Three servers behind nginx, on one laptop ([method and raw data](docs/loadtest.md)):
+
+| | Connections | Sends/s | Deliveries/s | Delivery p50 / p99 | Every message exactly once, in order |
+|---|---:|---:|---:|---|:-:|
+| Steady load | 2,000 | 1,017 | 19,328 | 1 ms / 5 ms | ✅ |
+| One server SIGKILLed mid-run | 1,000 | 506 | 9,607 | 2 ms / 135 ms | ✅ |
+
+The load test runs the real client engine, then checks every client's timeline against Postgres.
+It also caught a failover problem: nginx defaults made reconnects take **11 s** after a crash. The
+[write-up](docs/loadtest.md#1-failover-took-11-seconds-instead-of-1) explains it, and fixing it brought p99 down to 135 ms.
+
 | Live chat with read receipts | Server killed mid-conversation |
 |---|---|
 | ![parley chat](docs/chat.jpg) | ![offline with a pending message](docs/offline.jpg) |
@@ -82,6 +95,9 @@ npm test             # 40 tests (server + client engine)
 npm run seed         # demo users alice / bob / carol, password "parley-demo"
 npm run dev          # server on :3000 (runs migrations on start)
 npm run dev:web      # web app on http://localhost:5173
+
+npm run cluster:up   # 3 servers + nginx on http://localhost:8080, Prometheus on :9090
+docker compose run --rm loadtest --channels 100 --members 20 --rate 0.5 --duration 60
 ```
 
 Stack: TypeScript, Node 24, Fastify, ws, Postgres 17, Redis 7, zod, React 19, Vite, Vitest, Biome.
@@ -90,4 +106,4 @@ Stack: TypeScript, Node 24, Fastify, ws, Postgres 17, Redis 7, zod, React 19, Vi
 1. ✅ Server core: auth, workspaces/channels/DMs, ordered and duplicate-safe sends, fan-out across servers, sync
 2. ✅ Online status, typing indicators, read receipts and unread counts, rate limiting
 3. ✅ React web client: pending sends, automatic reconnect plus sync, unread badges, typing, online status, "Seen by"
-4. Docker Compose with 3 servers behind nginx, a load test (p50/p99 latency, msgs/s), metrics, deployment
+4. ✅ Three servers behind nginx in Docker Compose, Prometheus metrics, load and crash testing ([results](docs/loadtest.md))

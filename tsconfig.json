@@ -13,5 +13,12 @@
     "types": ["node"],
     "lib": ["ES2023", "DOM"]
   },
-  "include": ["packages/*/src", "apps/server/src", "apps/server/test", "apps/web/test", "vitest.config.ts"]
+  "include": [
+    "packages/*/src",
+    "apps/server/src",
+    "apps/server/test",
+    "apps/web/test",
+    "apps/loadtest/src",
+    "vitest.config.ts"
+  ]
 }

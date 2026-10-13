@@ -18,7 +18,7 @@ indicators, read receipts) built to run as several identical servers behind a lo
 | Ordering | One total order per channel, the same for every client |
 | Duplicates | A retried send never creates a second message |
 | Latency | p99 under 150 ms from send to delivery, on a single region |
-| Scale (target for the demo) | 10k simultaneous connections across 3 servers, 1k messages/s |
+| Scale (target for the demo) | 10k simultaneous connections across 3 servers, 1k messages/s; **measured:** 1,017 msgs/s (19k deliveries/s) with p99 of 5 ms at 2k connections, see [docs/loadtest.md](docs/loadtest.md) |
 | Availability | Losing one server only disconnects its clients; they reconnect elsewhere and catch up |
 
 ## Architecture
@@ -153,7 +153,7 @@ read_cursors(user_id, channel_id, last_read_seq)
 ## Failure modes
 | Failure | Effect | Recovery |
 |---|---|---|
-| A server crashes | Its clients disconnect | Clients reconnect with backoff and jitter, then sync from their last `seq` |
+| A server crashes | Its clients disconnect | Clients reconnect with backoff and jitter; nginx fails over within 1 s (`proxy_connect_timeout 1s` + `proxy_next_upstream`); clients sync from their last `seq`. Measured: 0 messages lost, p99 135 ms |
 | Redis drops a publish | Some clients miss a live message | Detected as a gap in `seq` (or on the next message), then a sync |
 | Redis is down | No live fan-out, no presence | Messages still save; clients poll `sync`; the server reports itself degraded |
 | Postgres is down | Sends fail without an ack | The client keeps the unsent message and retries with the same `clientMsgId` |
@@ -175,5 +175,5 @@ read_cursors(user_id, channel_id, last_read_seq)
 3. ✅ **React web client:** a framework-independent `ChatClient` engine (pending messages,
    reconnect with backoff and jitter, gap-driven sync, deduplication by seq) tested against two
    real servers, plus the React UI.
-4. Docker Compose with 3 servers behind nginx, the load test, metrics (Prometheus) and a
-   deployment.
+4. ✅ **Running it:** 3 servers behind nginx (`least_conn`, fast failover), Prometheus metrics, a
+   load and crash test built on the real client engine that checks correctness after every run.

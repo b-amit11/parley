@@ -1,0 +1,6 @@
+global:
+  scrape_interval: 5s
+scrape_configs:
+  - job_name: parley
+    static_configs:
+      - targets: ["server1:3000", "server2:3000", "server3:3000"]

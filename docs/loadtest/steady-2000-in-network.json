@@ -1,0 +1,42 @@
+{
+  "config": {
+    "url": "http://nginx",
+    "channels": 100,
+    "members": 20,
+    "connections": 2000,
+    "ratePerUser": 0.5,
+    "durationS": 60,
+    "chaos": false
+  },
+  "throughput": {
+    "sent": 61038,
+    "stored": 61038,
+    "sendsPerSecond": 1017.2,
+    "deliveriesPerSecond": 19327.7
+  },
+  "ackLatencyMs": {
+    "count": 61038,
+    "p50": 1,
+    "p95": 2,
+    "p99": 5,
+    "max": 101
+  },
+  "deliveryLatencyMs": {
+    "count": 1159722,
+    "p50": 1,
+    "p95": 3,
+    "p99": 5,
+    "max": 102
+  },
+  "recoveredBySync": 0,
+  "reconnects": 0,
+  "correctness": {
+    "missing": 0,
+    "duplicates": 0,
+    "outOfOrder": 0,
+    "unacked": 0,
+    "channelsWithSeqGaps": 0
+  },
+  "loadGeneratorEventLoopP99Ms": 12.7,
+  "drainSeconds": 0.4
+}

@@ -29,6 +29,7 @@ export function ChannelView({
   }, [client, channel.id, channel.joined]);
 
   // Mark as read whenever new messages land while this channel is open and the tab is visible.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: timeline.head is the trigger, not an input
   useEffect(() => {
     if (timeline.loaded && document.visibilityState === "visible") client.markRead(channel.id);
   }, [client, channel.id, timeline.loaded, timeline.head]);
@@ -240,6 +241,8 @@ function Composer({
   const lastTyping = useRef(0);
   const ref = useRef<HTMLTextAreaElement>(null);
 
+  // Grow the textarea with its content.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: text is the trigger, not an input
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;

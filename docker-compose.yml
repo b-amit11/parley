@@ -1,3 +1,20 @@
+# `npm run db:up` starts only Postgres and Redis for local development.
+# `npm run cluster:up` also starts three servers behind nginx (http://localhost:8080) and Prometheus (:9090).
+x-server: &server
+  build: { context: ., dockerfile: deploy/server.Dockerfile }
+  environment: &server-env
+    DATABASE_URL: postgres://parley:parley@postgres:5432/parley
+    REDIS_URL: redis://redis:6379
+    PORT: "3000"
+    LOG_LEVEL: warn
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+  ulimits:
+    nofile: { soft: 65535, hard: 65535 }
+  profiles: [cluster]
+  restart: unless-stopped
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -5,6 +22,7 @@ services:
       POSTGRES_USER: parley
       POSTGRES_PASSWORD: parley
       POSTGRES_DB: parley
+    command: ["postgres", "-c", "max_connections=200"]
     ports: ["5433:5432"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U parley"]
@@ -17,3 +35,37 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s
       retries: 20
+
+  server1:
+    <<: *server
+    environment: { <<: *server-env, NODE_ID: server1 }
+  server2:
+    <<: *server
+    environment: { <<: *server-env, NODE_ID: server2 }
+  server3:
+    <<: *server
+    environment: { <<: *server-env, NODE_ID: server3 }
+
+  nginx:
+    build: { context: ., dockerfile: deploy/web.Dockerfile }
+    ports: ["8080:80"]
+    depends_on: [server1, server2, server3]
+    ulimits:
+      nofile: { soft: 65535, hard: 65535 }
+    profiles: [cluster]
+    restart: unless-stopped
+
+  # Load generator inside the Docker network, so results don't include Docker Desktop's port
+  # forwarding from the host: `docker compose run --rm loadtest --channels 100 --members 20`.
+  loadtest:
+    build: { context: ., dockerfile: deploy/loadtest.Dockerfile }
+    volumes: ["./docs/loadtest:/app/out"]
+    ulimits:
+      nofile: { soft: 65535, hard: 65535 }
+    profiles: [loadtest]
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    volumes: ["./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    ports: ["9090:9090"]
+    profiles: [cluster]
