@@ -1,5 +1,7 @@
 # parley
 
+[![CI](https://github.com/b-amit11/parley/actions/workflows/ci.yml/badge.svg)](https://github.com/b-amit11/parley/actions/workflows/ci.yml)
+
 A real-time chat platform (workspaces, channels, DMs) designed to run as several identical servers
 behind a load balancer, without losing, duplicating or reordering messages.
 
