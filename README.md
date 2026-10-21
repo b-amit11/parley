@@ -5,6 +5,8 @@
 A real-time chat platform (workspaces, channels, DMs) designed to run as several identical servers
 behind a load balancer, without losing, duplicating or reordering messages.
 
+**Stack:** TypeScript · Node 24 · Fastify · WebSockets · PostgreSQL 17 · Redis 7 · React 19 · Docker · nginx · Prometheus · Vitest
+
 **[Design doc →](DESIGN.md)** covers requirements, architecture, trade-offs and failure modes.
 
 ## Results
@@ -47,12 +49,18 @@ backoff once the server is back, and the message is stored **exactly once** (seq
   how many can wait, slow clients are disconnected before they can exhaust memory, and every
   frame is validated against shared zod schemas.
 
+```mermaid
+flowchart LR
+    C1[Browser client] -- WebSocket --> LB[nginx load balancer]
+    C2[Browser client] -- WebSocket --> LB
+    LB --> S1[server-1]
+    LB --> S2[server-2]
+    LB --> S3[server-3]
+    S1 & S2 & S3 -- "send: seq assigned in txn<br/>sync: catch up on gaps" --> PG[(PostgreSQL<br/>source of truth)]
+    S1 & S2 & S3 <-- "pub/sub fan-out<br/>presence heartbeats" --> R[(Redis)]
 ```
-clients ──WebSocket──▶ load balancer ──▶ server-1 · server-2 · server-3 (stateless Node)
-                                               │  Redis pub/sub fan-out   │
-                                               ▼                          ▼
-                                           Postgres                     Redis
-```
+
+Servers are stateless Node processes; any client can connect to any server.
 
 ## Tested across servers, against real infrastructure
 
@@ -102,10 +110,14 @@ npm run cluster:up   # 3 servers + nginx on http://localhost:8080, Prometheus on
 docker compose run --rm loadtest --channels 100 --members 20 --rate 0.5 --duration 60
 ```
 
-Stack: TypeScript, Node 24, Fastify, ws, Postgres 17, Redis 7, zod, React 19, Vite, Vitest, Biome.
+Requires Node 24+ and Docker.
 
 ## Roadmap
 1. ✅ Server core: auth, workspaces/channels/DMs, ordered and duplicate-safe sends, fan-out across servers, sync
 2. ✅ Online status, typing indicators, read receipts and unread counts, rate limiting
 3. ✅ React web client: pending sends, automatic reconnect plus sync, unread badges, typing, online status, "Seen by"
 4. ✅ Three servers behind nginx in Docker Compose, Prometheus metrics, load and crash testing ([results](docs/loadtest.md))
+
+## License
+
+[MIT](LICENSE)
