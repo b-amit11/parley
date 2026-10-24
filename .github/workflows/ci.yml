@@ -14,8 +14,8 @@ jobs:
         ports: ["6380:6379"]
         options: --health-cmd "redis-cli ping" --health-interval 2s --health-retries 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: 24, cache: npm }
       - run: npm ci
       - run: npm run lint
@@ -28,11 +28,34 @@ jobs:
   chaos:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: 24, cache: npm }
       - run: npm ci
       - run: npm run cluster:up
       - run: npm run loadtest -- --channels 20 --members 10 --rate 0.5 --duration 30 --chaos --out docs/loadtest/ci-chaos.json
       - if: always()
         run: docker compose --profile cluster logs --tail 50
+
+  # Builds the single-container image used for hosted demos and checks it end to end: web app
+  # served, API under /api, demo users seeded, metrics hidden.
+  single:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker compose up -d --wait postgres redis
+      - run: docker build -f deploy/single.Dockerfile -t parley-single .
+      - run: >
+          docker run -d --name parley --network host
+          -e DATABASE_URL=postgres://parley:parley@localhost:5433/parley
+          -e REDIS_URL=redis://localhost:6380 -e SEED_DEMO=true -e PORT=3000 parley-single
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 30); do curl -sf localhost:3000/api/healthz && break; sleep 2; done
+          curl -sf localhost:3000/ | grep -q '<div id="root">'
+          curl -sf localhost:3000/workspaces/anything | grep -q '<div id="root">'
+          curl -sf -X POST localhost:3000/api/auth/login -H 'content-type: application/json' \
+            -d '{"username":"alice","password":"parley-demo"}' | grep -q '"token"'
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:3000/api/metrics)" = 404
+      - if: always()
+        run: docker logs parley --tail 50

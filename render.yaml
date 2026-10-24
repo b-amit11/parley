@@ -1,0 +1,29 @@
+# Render Blueprint: one web service (server + web app in one container) and a Redis-compatible
+# Key Value instance. Postgres comes from Neon (free tier); paste its connection string as
+# DATABASE_URL when Render asks for it.
+services:
+  - type: web
+    name: parley
+    runtime: docker
+    plan: free
+    dockerfilePath: ./deploy/single.Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/healthz
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: parley-redis
+          property: connectionString
+      - key: SEED_DEMO
+        value: "true"
+      - key: LOG_LEVEL
+        value: info
+
+  - type: keyvalue
+    name: parley-redis
+    plan: free
+    maxmemoryPolicy: noeviction
+    ipAllowList: []

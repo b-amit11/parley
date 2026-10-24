@@ -112,6 +112,15 @@ docker compose run --rm loadtest --channels 100 --members 20 --rate 0.5 --durati
 
 Requires Node 24+ and Docker.
 
+### Hosted demo (one container)
+
+`deploy/single.Dockerfile` runs the server and the built web app in one process (API under
+`/api`, WebSockets on `/ws`), for free-tier hosts without a load balancer. `render.yaml` is a
+Render Blueprint that creates the service plus a Redis-compatible Key Value instance; Postgres
+comes from any provider (for example Neon) via `DATABASE_URL`. With `SEED_DEMO=true` the demo
+users `alice`, `bob` and `carol` (password `parley-demo`) are created on start. CI builds this
+image and smoke-tests it on every push.
+
 ## Roadmap
 1. ✅ Server core: auth, workspaces/channels/DMs, ordered and duplicate-safe sends, fan-out across servers, sync
 2. ✅ Online status, typing indicators, read receipts and unread counts, rate limiting
