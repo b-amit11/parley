@@ -6,6 +6,7 @@ import { attachGateway, type Gateway, type GatewayOptions } from "./gateway.ts";
 import { registerRoutes } from "./http.ts";
 import { Presence } from "./presence.ts";
 import { type Bucket, RateLimiter } from "./ratelimit.ts";
+import { serveWebApp } from "./static.ts";
 
 export type Limits = GatewayOptions & {
   /** Failed logins per username, against password guessing. */
@@ -30,6 +31,8 @@ export type Config = {
   host: string;
   nodeId: string;
   logLevel: string;
+  /** When set, also serve the built web app from this folder and move the API under /api. */
+  staticDir?: string;
   limits?: Partial<Limits>;
 };
 
@@ -58,7 +61,13 @@ export async function startServer(config: Config): Promise<RunningServer> {
   const presence = new Presence(redis, limits.presenceTtlMs);
   const limiter = new RateLimiter(redis, onRedisError);
 
-  registerRoutes(app, { db, redis, limiter, loginLimit: limits.loginLimit });
+  const routeDeps = { db, redis, limiter, loginLimit: limits.loginLimit };
+  if (config.staticDir) {
+    app.register(async (api) => registerRoutes(api, routeDeps), { prefix: "/api" });
+    serveWebApp(app, config.staticDir);
+  } else {
+    registerRoutes(app, routeDeps);
+  }
   const gateway = attachGateway(app.server, {
     db,
     fanout,

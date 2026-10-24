@@ -9,5 +9,6 @@ export function configFromEnv(env = process.env): Config {
     host: env.HOST ?? "0.0.0.0",
     nodeId: env.NODE_ID ?? hostname(),
     logLevel: env.LOG_LEVEL ?? "info",
+    staticDir: env.STATIC_DIR || undefined,
   };
 }
