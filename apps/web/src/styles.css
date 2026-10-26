@@ -188,6 +188,26 @@ textarea:focus {
   font-weight: 600;
 }
 
+.demo-hint {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.demo-hint p {
+  margin: 0;
+}
+
+.demo-hint code {
+  color: var(--text);
+}
+
 .brand {
   font-weight: 800;
   font-size: 18px;

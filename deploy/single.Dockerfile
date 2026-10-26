@@ -11,6 +11,9 @@ COPY apps/loadtest/package.json apps/loadtest/
 RUN npm ci --ignore-scripts
 COPY packages/shared packages/shared
 COPY apps/web apps/web
+# Shows the seeded demo login on the sign-in screen; must match DEMO_PASSWORD in the seed.
+ARG VITE_DEMO_LOGIN=alice:parley-demo
+ENV VITE_DEMO_LOGIN=$VITE_DEMO_LOGIN
 RUN npm run build -w @parley/web
 
 FROM node:24-alpine

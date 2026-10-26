@@ -2,6 +2,10 @@ import { type FormEvent, useState } from "react";
 import { ApiError } from "../lib/api.ts";
 import { publicApi, type Session } from "../session.ts";
 
+// Set at build time for hosted demos (deploy/single.Dockerfile), e.g. "alice:parley-demo".
+const DEMO_LOGIN: string | undefined = import.meta.env.VITE_DEMO_LOGIN;
+const [demoUser, demoPassword] = DEMO_LOGIN?.split(":") ?? [];
+
 export function AuthScreen({ onSignedIn }: { onSignedIn: (s: Session) => void }) {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [username, setUsername] = useState("");
@@ -55,6 +59,24 @@ export function AuthScreen({ onSignedIn }: { onSignedIn: (s: Session) => void })
             required
           />
         </label>
+        {mode === "login" && demoUser && demoPassword && (
+          <div className="demo-hint">
+            <p>
+              Demo account: <code>{demoUser}</code> / <code>{demoPassword}</code>. Sign in as <code>bob</code> in a
+              second window to watch messages arrive live.
+            </p>
+            <button
+              type="button"
+              className="link"
+              onClick={() => {
+                setUsername(demoUser);
+                setPassword(demoPassword);
+              }}
+            >
+              Fill in the demo account
+            </button>
+          </div>
+        )}
         {error && <p className="form-error">{error}</p>}
         <button type="submit" className="primary" disabled={busy}>
           {busy ? "…" : mode === "login" ? "Sign in" : "Create account"}

@@ -57,5 +57,6 @@ jobs:
           curl -sf -X POST localhost:3000/api/auth/login -H 'content-type: application/json' \
             -d '{"username":"alice","password":"parley-demo"}' | grep -q '"token"'
           test "$(curl -s -o /dev/null -w '%{http_code}' localhost:3000/api/metrics)" = 404
+          docker exec parley sh -c 'grep -rq "alice:parley-demo" /app/public/assets' 
       - if: always()
         run: docker logs parley --tail 50
