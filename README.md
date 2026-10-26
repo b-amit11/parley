@@ -7,6 +7,8 @@ behind a load balancer, without losing, duplicating or reordering messages.
 
 **Stack:** TypeScript · Node 24 · Fastify · WebSockets · PostgreSQL 17 · Redis 7 · React 19 · Docker · nginx · Prometheus · Vitest
 
+**[Live demo →](https://parley-9epp.onrender.com)** · sign in with the demo account shown on the page, and open a second window as `bob` to watch messages arrive. The free host sleeps when idle, so the first load can take up to a minute.
+
 **[Design doc →](DESIGN.md)** covers requirements, architecture, trade-offs and failure modes.
 
 ## Results
