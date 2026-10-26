@@ -62,8 +62,8 @@ export function AuthScreen({ onSignedIn }: { onSignedIn: (s: Session) => void })
         {mode === "login" && demoUser && demoPassword && (
           <div className="demo-hint">
             <p>
-              Demo account: <code>{demoUser}</code> / <code>{demoPassword}</code>. Sign in as <code>bob</code> in a
-              second window to watch messages arrive live.
+              Demo account: <code>{demoUser}</code> / <code>{demoPassword}</code>. Sign in as <code>bob</code>{" "}
+              in a second window to watch messages arrive live.
             </p>
             <button
               type="button"
