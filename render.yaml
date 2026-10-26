@@ -6,6 +6,7 @@ services:
     name: parley
     runtime: docker
     plan: free
+    region: ohio
     dockerfilePath: ./deploy/single.Dockerfile
     dockerContext: .
     healthCheckPath: /api/healthz
@@ -25,5 +26,6 @@ services:
   - type: keyvalue
     name: parley-redis
     plan: free
+    region: ohio
     maxmemoryPolicy: noeviction
     ipAllowList: []
